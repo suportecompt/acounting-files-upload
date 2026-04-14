@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Importador SAF-T</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        // EL GUARDIA INVERSO: Si ya hay token, lo mandamos directo al lector
+        if (sessionStorage.getItem('supabase_token')) {
+            window.location.href = 'importador.html';
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-xl shadow-lg p-8 max-w-sm w-full">
+        
+        <div class="text-center mb-8">
+            <div class="mx-auto bg-blue-100 rounded-full h-16 w-16 flex items-center justify-center mb-4">
+                <i data-lucide="lock" class="h-8 w-8 text-blue-600"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800">Acesso Restrito</h2>
+            <p class="text-gray-500 text-sm mt-2">Inicie sessão para importar ficheiros.</p>
+        </div>
+
+        <form id="loginForm" class="space-y-4">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                <input type="email" id="email" required
+                    class="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Palavra-passe</label>
+                <input type="password" id="password" required
+                    class="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+            </div>
+
+            <button type="submit" id="btnLogin"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 shadow-md flex justify-center items-center gap-2 mt-4">
+                <i data-lucide="log-in" class="h-5 w-5"></i>
+                Entrar
+            </button>
+        </form>
+
+        <div id="loginErro" class="mt-4 text-center text-sm font-medium text-red-600"></div>
+
+    </div>
+    
+    <script src="config.js"></script>
+    <script src="login.js"></script>
+    <script>
+      lucide.createIcons();
+    </script>
+</body>
+</html>
