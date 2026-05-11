@@ -61,7 +61,7 @@ async function processarEfaturaCompleto(textoCsv) {
         await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENTS, datosFacturas);
 
         mostrarMensagem(`Sucesso! ${datosFacturas.length} faturas importadas sem erros.`, "text-green-600");
-        document.getElementById('archivoEntrada').value = "";
+        document.getElementById('archivoCsv').value = "";
 
     } catch (err) {
         console.error("Erro no processamento CSV:", err);

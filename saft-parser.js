@@ -57,37 +57,32 @@ async function processarSaftCompleto(textoXml) {
             const customerId = f.getElementsByTagName("CustomerID")[0]?.textContent?.trim();
             
             if (!invoiceNo || !customerId) return;
-            if (!mapClientesInfo[customerId]) return; // Si no existe el cliente, ignoramos
+            if (!mapClientesInfo[customerId]) return;
 
             const totals = f.getElementsByTagName("DocumentTotals")[0];
             const nifCliente = mapClientesInfo[customerId].nif; 
             const prazoVenc = f.getElementsByTagName("PaymentTerms")[0]?.textContent?.trim() || null;
 
-            // --- CABECERA DE LA FACTURA ---
             documents.push({
                 id: invoiceNo,
                 date: f.getElementsByTagName("InvoiceDate")[0]?.textContent?.trim(),
                 doc_type: f.getElementsByTagName("InvoiceType")[0]?.textContent?.trim() || null,
                 system_entry_date: f.getElementsByTagName("SystemEntryDate")[0]?.textContent?.trim() || null,
-                
                 customer_id: customerId,
-                contribuinte1: nifCliente,          // NIF extraído del XML (Cliente)
-                contribuinte2: '506648559',         // Tu NIF (Fijo)
-                record_source: 'saft',              // Origen de los datos
-                prazo_venc: prazoVenc,     
-                
+                contribuinte1: nifCliente,
+                contribuinte2: '506648559',
+                record_source: 'saft',
+                prazo_venc: prazoVenc,
                 atcud: f.getElementsByTagName("ATCUD")[0]?.textContent?.trim() || null,
                 doc_status: f.getElementsByTagName("DocumentStatus")[0]?.getElementsByTagName("InvoiceStatus")[0]?.textContent?.trim() || null,
                 hash_code: f.getElementsByTagName("Hash")[0]?.textContent?.trim() || null,
                 period: f.getElementsByTagName("Period")[0]?.textContent?.trim() || null,
                 movement_start_time: f.getElementsByTagName("MovementStartTime")[0]?.textContent?.trim() || null,
-                
                 net_total: parseFloat(totals?.getElementsByTagName("NetTotal")[0]?.textContent || 0),
                 tax_payable: parseFloat(totals?.getElementsByTagName("TaxPayable")[0]?.textContent || 0),
                 gross_total: parseFloat(totals?.getElementsByTagName("GrossTotal")[0]?.textContent || 0)
             });
 
-            // --- LÍNEAS DE LA FACTURA ---
             const lineasXML = Array.from(f.getElementsByTagName("Line"));
             lineasXML.forEach(l => {
                 documentdetails.push({
@@ -111,10 +106,9 @@ async function processarSaftCompleto(textoXml) {
 }
 
 async function enviarTodoASupabase(payload) {
-    // 1. Enviar los catálogos primero
     const tareasBasicas = [
-        { nombre: 'Empresas (Company)', data: payload.company, endpoint: AppConfig.ENDPOINTS.COMPANY },
-        { nombre: 'Moradas (Places)', data: payload.places, endpoint: AppConfig.ENDPOINTS.PLACES },
+        { nombre: 'Empresas', data: payload.company, endpoint: AppConfig.ENDPOINTS.COMPANY },
+        { nombre: 'Moradas', data: payload.places, endpoint: AppConfig.ENDPOINTS.PLACES },
         { nombre: 'Produtos', data: payload.products, endpoint: AppConfig.ENDPOINTS.PRODUCTS }
     ];
 
@@ -128,13 +122,12 @@ async function enviarTodoASupabase(payload) {
         }
     }
 
-    // 2. Enviar Documentos y pedirle a Supabase que nos devuelva los datos insertados
     if (payload.documents && payload.documents.length > 0) {
         mostrarMensagem(`A guardar Documentos...`, "text-yellow-600");
         try {
+            // Enviamos documentos y obtenemos la respuesta con los internal_id generados por la DB
             const documentosInsertados = await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENTS, payload.documents, true);
 
-            // 3. Mapear el 'internal_id' a cada línea de detalle
             if (payload.documentdetails && payload.documentdetails.length > 0 && documentosInsertados) {
                 mostrarMensagem(`A guardar Detalhes...`, "text-yellow-600");
                 
@@ -146,37 +139,31 @@ async function enviarTodoASupabase(payload) {
                 const detallesFinales = payload.documentdetails.map(det => {
                     const idRealPadre = mapaIds[det._invoice_id];
                     delete det._invoice_id; 
-                    return {
-                        ...det,
-                        document_id: idRealPadre
-                    };
+                    return { ...det, document_id: idRealPadre };
                 }).filter(det => det.document_id);
 
                 if (detallesFinales.length > 0) {
-                    const lotesDeDetalles = dividirEnLotes(detallesFinales, 1000);
-                    
-                    for (const lote of lotesDeDetalles) {
+                    // Envío por lotes para evitar errores de timeout o payload grande
+                    const lotes = dividirEnLotes(detallesFinales, 1000);
+                    for (const lote of lotes) {
                         await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENT_DETAILS, lote);
                     }
                 }
             }
         } catch (error) {
-            console.error(`Erro nos Documentos/Detalhes:`, error);
-            mostrarMensagem(`Erro a guardar documentos: ${error.message}`, "text-red-600");
+            console.error(error);
+            mostrarMensagem(`Erro nos Documentos: ${error.message}`, "text-red-600");
             return;
         }
     }
 
     mostrarMensagem("Sucesso! Base de dados sincronizada.", "text-green-600");
     
-    // El ID se actualizó para coincidir con el importador.html
-    const inputFicheiro = document.getElementById('archivoEntrada');
-    if (inputFicheiro) {
-        inputFicheiro.value = "";
-    }
+    // CORRECCIÓN: Usar el ID correcto del HTML para limpiar el campo
+    const inputGlobal = document.getElementById('archivoXml');
+    if (inputGlobal) inputGlobal.value = "";
 }
 
-// Función extra para dividir arrays grandes en trozos pequeños
 function dividirEnLotes(array, tamanhoLote) {
     const lotes = [];
     for (let i = 0; i < array.length; i += tamanhoLote) {
@@ -206,7 +193,5 @@ async function enviarPeticion(endpoint, data, returnData = false) {
         throw new Error(err.message || response.statusText);
     }
 
-    if (returnData) {
-        return await response.json();
-    }
+    if (returnData) return await response.json();
 }

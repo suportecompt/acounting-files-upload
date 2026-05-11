@@ -11,13 +11,20 @@ window.AppConfig = {
         PRODUCTS: '/rest/v1/products',
         PLACES: '/rest/v1/places?on_conflict=id,descricao,company',
         DOCUMENTS: '/rest/v1/documents',
-        DOCUMENT_DETAILS: '/rest/v1/documentdetails'
+        DOCUMENT_DETAILS: '/rest/v1/documentdetails',
+        
+        // 🚀 NUEVO: Endpoint para la tabla de extractos bancarios
+        // (Ajusta a 'bank_details' en minúsculas si tu tabla en Postgres se creó así)
+        BANK_DETAILS: '/rest/v1/bank_details?on_conflict=id' 
     },
 
-    // 3. Configuração de Leitura
+    // 3. Configuração de Leitura y Procesamiento
     SETTINGS: {
         ENCODING: 'windows-1252',
-        DEBUG: true
+        DEBUG: true,
+        
+        // 🚀 NUEVO: Centralizamos el tamaño del lote para los envíos AJAX
+        BATCH_SIZE: 500 
     }
 };
 

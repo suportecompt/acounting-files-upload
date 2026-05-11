@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importador de Faturas (SAF-T / e-fatura)</title>
+    <title>Importador de Faturas (SAF-T / e-fatura / XLSX)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <script>
         // EL GUARDIA: Si no hay token, te expulsa al login inmediatamente
@@ -29,25 +31,31 @@
                 <i data-lucide="file-up" class="h-8 w-8 text-blue-600"></i>
             </div>
             <h2 class="text-2xl font-bold text-gray-800">Importar Dados</h2>
-            <p class="text-gray-500 text-sm mt-2">Carregue o seu ficheiro (.xml ou .csv) para sincronizar com a base de dados.</p>
+            <p class="text-gray-500 text-sm mt-2">Selecione os ficheiros para sincronizar com a base de dados.</p>
+        </div>
+
+        <div class="mb-4">
+            <label for="archivoXml" class="block text-sm font-medium text-gray-700 mb-2">1. Ficheiro SAF-T (.xml)</label>
+            <input type="file" id="archivoXml" accept=".xml" 
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-md p-2 transition-colors">
+        </div>
+
+        <div class="mb-4">
+            <label for="archivoCsv" class="block text-sm font-medium text-gray-700 mb-2">2. Ficheiro e-fatura (.csv)</label>
+            <input type="file" id="archivoCsv" accept=".csv" 
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer border border-gray-300 rounded-md p-2 transition-colors">
         </div>
 
         <div class="mb-6">
-            <label for="archivoEntrada" class="block text-sm font-medium text-gray-700 mb-2">Selecione o ficheiro</label>
-            <input type="file" id="archivoEntrada" accept=".xml, .csv" 
-                class="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-md file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100 cursor-pointer 
-                border border-gray-300 rounded-md p-2 transition-colors">
+            <label for="archivoXlsx" class="block text-sm font-medium text-gray-700 mb-2">3. Ficheiro Excel (.xlsx)</label>
+            <input type="file" id="archivoXlsx" accept=".xlsx" 
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer border border-gray-300 rounded-md p-2 transition-colors">
         </div>
 
         <button id="btnProcessar" 
             class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-md transition duration-300 shadow-md flex justify-center items-center gap-2">
             <i data-lucide="cloud-upload" class="h-5 w-5"></i>
-            Processar Ficheiro
+            Processar Ficheiros
         </button>
 
         <div id="mensagemEstado" class="mt-4 text-center text-sm font-medium"></div>
@@ -57,13 +65,13 @@
     <script src="config.js"></script>
     <script src="saft-parser.js"></script>
     <script src="efatura-parser.js"></script>
+    <script src="xlsx-parser.js"></script>
     <script src="main.js"></script>
 
     <script>
         // Función para cerrar sesión
         function terminarSessao() {
             sessionStorage.removeItem('supabase_token');
-            // Te devuelve al login (asumiendo que es index.html)
             window.location.href = 'index.html';
         }
 
