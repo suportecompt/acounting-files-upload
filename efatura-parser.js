@@ -1,7 +1,7 @@
-// efatura-parser.js - Lógica processamento e-fatura (Todas as faturas)
+// efatura-parser.js - Compatible con ambos formatos de e-fatura
 
 async function processarEfaturaCompleto(textoCsv) {
-    mostrarMensagem("A analisar a estrutura do CSV...", "text-blue-600");
+    mostrarMensagem("A analizar a estrutura do CSV...", "text-blue-600");
 
     try {
         const lineas = textoCsv.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -10,57 +10,74 @@ async function processarEfaturaCompleto(textoCsv) {
             throw new Error("O ficheiro CSV não tem dados suficientes.");
         }
 
+        // 1. DETECCIÓN DE FORMATO mediante la cabecera
+        const cabecera = lineas[0].toLowerCase();
+        let esTipoVenta = false;
+
+        if (cabecera.includes("nif adquirente") || !cabecera.includes("setor")) {
+            esTipoVenta = true; // Formato e-fatura.csv (Ventas/Emitidas)
+        }
+
         const datosFacturas = [];
 
-        // Saltamos la línea 0 (cabeceras)
+        // 2. PROCESAMIENTO DE LÍNEAS
         for (let i = 1; i < lineas.length; i++) {
             const columnas = lineas[i].split(';');
-
-            // Función auxiliar para quitar las comillas "" de cada celda
             const cleanCol = (index) => columnas[index] ? columnas[index].replace(/^"|"$/g, '').trim() : '';
 
-            // Extraer NIF (Cortamos por " - " y nos quedamos la primera parte)
-            const emitenteRaw = cleanCol(1);
-            const nifEmitente = emitenteRaw.split(' - ')[0]?.trim();
+            let nifVendedor, nifComprador, numFatura, atcud, fecha, tipoDoc, situacao, idxTotal, idxIva, idxBase;
 
-            // Extraer Nº Fatura y ATCUD (Cortamos por " / ")
-            const faturaAtcudRaw = cleanCol(2);
-            const numFatura = faturaAtcudRaw.split(' / ')[0]?.trim();
-            const atcud = faturaAtcudRaw.split(' / ')[1]?.trim() || null;
+            if (esTipoVenta) {
+                /** FORMATO VENTAS (e-fatura.csv) **/
+                const faturaAtcudRaw = cleanCol(0);
+                numFatura = faturaAtcudRaw.split(' / ')[0]?.trim();
+                atcud     = faturaAtcudRaw.split(' / ')[1]?.trim() || null;
+                nifVendedor  = '506648559'; // Tu NIF como emisor
+                nifComprador = cleanCol(1); 
+                fecha        = cleanCol(2); // Columna 2
+                tipoDoc      = cleanCol(3);
+                situacao     = cleanCol(7);
+                idxTotal = 4; idxIva = 5; idxBase = 6;
+            } else {
+                /** FORMATO GASTOS (2025...e-fatura.csv) **/
+                const emitenteRaw = cleanCol(1);
+                nifVendedor  = emitenteRaw.split(' - ')[0]?.trim();
+                nifComprador = '506648559'; // Tu NIF como receptor
+                const faturaAtcudRaw = cleanCol(2);
+                numFatura = faturaAtcudRaw.split(' / ')[0]?.trim();
+                atcud     = faturaAtcudRaw.split(' / ')[1]?.trim() || null;
+                fecha        = cleanCol(4); // Columna 4
+                tipoDoc      = cleanCol(3);
+                situacao     = cleanCol(8);
+                idxTotal = 5; idxIva = 6; idxBase = 7;
+            }
 
-            // Ya NO filtramos por estado, simplemente lo leemos para guardarlo
-            const situacao = cleanCol(8);
-
-            // Solo ignoramos si la línea está completamente rota y no tiene ID o NIF
-            if (!nifEmitente || !numFatura) continue;
+            if (!numFatura || !fecha) continue;
 
             datosFacturas.push({
-                id: numFatura,                         
-                contribuinte2: nifEmitente,             // Vendedor
-                contribuinte1: '506648559',             // Comprador (O teu NIF)
-                date: cleanCol(4),                      // Ya viene en YYYY-MM-DD
-                doc_type: cleanCol(3) === 'Fatura-recibo' ? 'FR' : 'FT',
-                record_source: 'efatura',               
-                atcud: atcud,                           // Guardamos el ATCUD
-                doc_status: situacao,                   // Guardamos el estado (Registado, etc.)
-                
-                // Limpieza de importes con símbolo €
-                gross_total: limparMoeda(cleanCol(5)),
-                tax_payable: limparMoeda(cleanCol(6)),
-                net_total: limparMoeda(cleanCol(7)) 
+                id: numFatura, 
+                date: fecha, 
+                contribuinte1: nifComprador,
+                contribuinte2: nifVendedor,
+                doc_type: tipoDoc.toLowerCase().includes('recibo') ? 'FR' : (tipoDoc.toLowerCase().includes('crédito') ? 'NC' : 'FT'),
+                atcud: atcud,
+                doc_status: situacao,
+                record_source: 'efatura',
+                gross_total: limparMoeda(cleanCol(idxTotal)),
+                tax_payable: limparMoeda(cleanCol(idxIva)),
+                net_total: limparMoeda(cleanCol(idxBase))
             });
         }
 
         if (datosFacturas.length === 0) {
-            throw new Error("Não há faturas válidas para importar no ficheiro.");
+            throw new Error("Não há faturas válidas para importar.");
         }
 
         mostrarMensagem(`A guardar ${datosFacturas.length} faturas...`, "text-yellow-600");
 
-        // Enviar a Supabase
         await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENTS, datosFacturas);
 
-        mostrarMensagem(`Sucesso! ${datosFacturas.length} faturas importadas sem erros.`, "text-green-600");
+        mostrarMensagem(`Sucesso! ${datosFacturas.length} faturas importadas.`, "text-green-600");
         document.getElementById('archivoCsv').value = "";
 
     } catch (err) {
@@ -69,14 +86,13 @@ async function processarEfaturaCompleto(textoCsv) {
     }
 }
 
-// Función que convierte "148,01 €" -> 148.01
 function limparMoeda(valorStr) {
     if (!valorStr) return 0;
     const limpio = valorStr
-        .replace('€', '')         // Quita el euro
-        .replace(/\s/g, '')       // Quita espacios
-        .replace(/\./g, '')       // Quita puntos de miles (si los hay)
-        .replace(',', '.');       // Cambia la coma decimal a punto
+        .replace('€', '')
+        .replace(/\s/g, '')
+        .replace(/\./g, '') 
+        .replace(',', '.');
     
     const num = parseFloat(limpio);
     return isNaN(num) ? 0 : num;
