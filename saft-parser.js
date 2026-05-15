@@ -9,6 +9,9 @@ async function processarSaftCompleto(textoXml) {
     }
 
     try {
+        // Extraer el NIF del Emisor (tú) desde la cabecera general de forma dinámica
+        const nifEmisorSaft = xmlDoc.getElementsByTagName("TaxRegistrationNumber")[0]?.textContent?.trim() || "506648559";
+
         // 1. COMPANY & PLACES
         const clientesXML = Array.from(xmlDoc.getElementsByTagName("Customer"));
         const company = [];
@@ -22,18 +25,25 @@ async function processarSaftCompleto(textoXml) {
             const companyName = c.getElementsByTagName("CompanyName")[0]?.textContent?.trim() || "Sem Nome";
             const taxId = c.getElementsByTagName("CustomerTaxID")[0]?.textContent?.trim() || null; 
             
+            // Guardamos el NIF en el mapa temporal para usarlo enlazado a los documentos
             mapClientesInfo[customerId] = { nif: taxId }; 
 
-            company.push({ id: customerId, descricao: companyName });
+            // Ahora incluimos el NIF para la tabla estructurada en Supabase
+            company.push({ 
+                id: customerId, 
+                descricao: companyName,
+                nif: taxId
+            });
 
             const morada = c.getElementsByTagName("BillingAddress")[0];
             const addr = morada?.getElementsByTagName("AddressDetail")[0]?.textContent?.trim() || "";
             const city = morada?.getElementsByTagName("City")[0]?.textContent?.trim() || "";
             
+            // El campo 'company' debe asociarse al ID único (CustomerID), no al nombre
             places.push({
                 id: customerId, 
-                descricao: `${addr}, ${city}`.trim() || "Morada não especificada",
-                company: companyName
+                descricao: `${addr}, ${city}`.trim() === "," ? "Morada não especificada" : `${addr}, ${city}`.trim(),
+                company: customerId
             });
         });
 
@@ -69,8 +79,8 @@ async function processarSaftCompleto(textoXml) {
                 doc_type: f.getElementsByTagName("InvoiceType")[0]?.textContent?.trim() || null,
                 system_entry_date: f.getElementsByTagName("SystemEntryDate")[0]?.textContent?.trim() || null,
                 customer_id: customerId,
-                contribuinte1: nifCliente,
-                contribuinte2: '506648559',
+                contribuinte1: nifCliente,      // El comprador (NIF de tu cliente)
+                contribuinte2: nifEmisorSaft,  // El vendedor (Tu NIF extraído del XML)
                 record_source: 'saft',
                 prazo_venc: prazoVenc,
                 atcud: f.getElementsByTagName("ATCUD")[0]?.textContent?.trim() || null,
@@ -83,16 +93,21 @@ async function processarSaftCompleto(textoXml) {
                 gross_total: parseFloat(totals?.getElementsByTagName("GrossTotal")[0]?.textContent || 0)
             });
 
+            // Mapeo exacto de líneas e impuestos del XML real
             const lineasXML = Array.from(f.getElementsByTagName("Line"));
             lineasXML.forEach(l => {
+                const lineNo = l.getElementsByTagName("LineNumber")[0]?.textContent;
+                const taxNode = l.getElementsByTagName("Tax")[0];
+                const percentage = parseFloat(taxNode?.getElementsByTagName("Percentage")[0]?.textContent || 0);
+
                 documentdetails.push({
                     _invoice_id: invoiceNo, 
-                    id: `${invoiceNo}-${l.getElementsByTagName("LineNumber")[0]?.textContent}`,
-                    product: l.getElementsByTagName("ProductCode")[0]?.textContent,
-                    product_description: l.getElementsByTagName("ProductDescription")[0]?.textContent,
+                    id: `${invoiceNo}-${lineNo}`,
+                    product: l.getElementsByTagName("ProductCode")[0]?.textContent || null,
+                    product_description: l.getElementsByTagName("ProductDescription")[0]?.textContent || null,
                     qtty: parseFloat(l.getElementsByTagName("Quantity")[0]?.textContent || 0),
                     price: parseFloat(l.getElementsByTagName("UnitPrice")[0]?.textContent || 0),
-                    tax: parseFloat(l.getElementsByTagName("Tax")[0]?.getElementsByTagName("TaxPercentage")[0]?.textContent || 0)
+                    tax: percentage
                 });
             });
         });
@@ -125,7 +140,7 @@ async function enviarTodoASupabase(payload) {
     if (payload.documents && payload.documents.length > 0) {
         mostrarMensagem(`A guardar Documentos...`, "text-yellow-600");
         try {
-            // Enviamos documentos y obtenemos la respuesta con los internal_id generados por la DB
+            // Enviamos documentos con returnData = true para sincronizar internal_id
             const documentosInsertados = await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENTS, payload.documents, true);
 
             if (payload.documentdetails && payload.documentdetails.length > 0 && documentosInsertados) {
@@ -143,8 +158,8 @@ async function enviarTodoASupabase(payload) {
                 }).filter(det => det.document_id);
 
                 if (detallesFinales.length > 0) {
-                    // Envío por lotes para evitar errores de timeout o payload grande
-                    const lotes = dividirEnLotes(detallesFinales, 1000);
+                    // Envío segmentado en lotes para prevenir Timeouts HTTP
+                    const lotes = dividirEnLotes(detallesFinales, 500);
                     for (const lote of lotes) {
                         await enviarPeticion(AppConfig.ENDPOINTS.DOCUMENT_DETAILS, lote);
                     }
@@ -159,7 +174,6 @@ async function enviarTodoASupabase(payload) {
 
     mostrarMensagem("Sucesso! Base de dados sincronizada.", "text-green-600");
     
-    // CORRECCIÓN: Usar el ID correcto del HTML para limpiar el campo
     const inputGlobal = document.getElementById('archivoXml');
     if (inputGlobal) inputGlobal.value = "";
 }
@@ -173,12 +187,14 @@ function dividirEnLotes(array, tamanhoLote) {
 }
 
 async function enviarPeticion(endpoint, data, returnData = false) {
+    // 🚀 CORRECCIÓN CRÍTICA: Ya NO hacemos split('?')[0]. Respetamos el on_conflict de config.js para evitar el 409
     const url = `${AppConfig.SUPABASE_URL}${endpoint}`;
     
     const headers = {
         'Content-Type': 'application/json',
         'apikey': AppConfig.SUPABASE_ANON_KEY,
         'Authorization': `${AppConfig.SUPABASE_ANON_KEY}`,
+        // 'resolution=ignore-duplicates' le dice a la base de datos que descarte duplicados pacíficamente
         'Prefer': returnData ? 'return=representation,resolution=ignore-duplicates' : 'resolution=ignore-duplicates'
     };
 
@@ -189,7 +205,7 @@ async function enviarPeticion(endpoint, data, returnData = false) {
     });
 
     if (!response.ok) {
-        const err = await response.json();
+        const err = await response.json().catch(() => ({ message: response.statusText }));
         throw new Error(err.message || response.statusText);
     }
 
